@@ -180,7 +180,20 @@ void HomotopyClassPlanner::visualize()
   }
   else ROS_DEBUG("Ignoring HomotopyClassPlanner::visualize() call, since no visualization class was instantiated before.");
 }
-
+void HomotopyClassPlanner::getPathAndTimediffs(
+  std::vector<geometry_msgs::PoseStamped>& path, std::vector<double>& timediffs)
+{
+  // Visualize best teb and feedback message if desired
+  TebOptimalPlannerConstPtr best_teb = bestTeb();
+  if (best_teb)
+  {
+    visualization_->getLocalPlanAndPosesWithVelocitie(best_teb_->teb(), path, timediffs);
+  }
+  else
+  {
+    ROS_ERROR("No best plan");
+  }
+}
 
 
 bool HomotopyClassPlanner::hasEquivalenceClass(const EquivalenceClassPtr& eq_class) const
@@ -497,6 +510,7 @@ void HomotopyClassPlanner::optimizeAllTEBs(int iter_innerloop, int iter_outerloo
       it_teb->get()->optimizeTEB(iter_innerloop,iter_outerloop, true, cfg_->hcp.selection_obst_cost_scale,
                                  cfg_->hcp.selection_viapoint_cost_scale, cfg_->hcp.selection_alternative_time_cost); // compute cost as well inside optimizeTEB (last argument = true)
     }
+    tebs_.begin()->get()->teb().timediffs();
   }
 }
 

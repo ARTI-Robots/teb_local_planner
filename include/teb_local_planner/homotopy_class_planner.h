@@ -54,6 +54,7 @@
 
 #include <ros/console.h>
 #include <ros/ros.h>
+#include <geometry_msgs/PoseStamped.h>
 
 #include <teb_local_planner/planner_interface.h>
 #include <teb_local_planner/teb_config.h>
@@ -211,6 +212,16 @@ public:
   TebOptimalPlannerPtr bestTeb() const {return tebs_.empty() ? TebOptimalPlannerPtr() : tebs_.size()==1 ? tebs_.front() : best_teb_;}
 
   /**
+ * @brief Access current best trajectory candidate (that relates to the "best" homotopy class).
+ *
+ * If no trajectory is available, the pointer will be empty.
+ * If only a single trajectory is available, return it.
+ * Otherwise return the best one, but call selectBestTeb() before to perform the actual selection (part of the plan() methods).
+ * @return Shared pointer to the best TebOptimalPlanner that contains the selected trajectory (TimedElasticBand).
+ */
+  const TimedElasticBand teb() const {return bestTeb()->teb();}
+
+  /**
    * @brief Check whether the planned trajectory is feasible or not.
    *
    * This method currently checks only that the trajectory, or a part of the trajectory is collision free.
@@ -260,6 +271,9 @@ public:
     * @see setVisualization
     */
   virtual void visualize();
+
+  virtual void getPathAndTimediffs(std::vector<geometry_msgs::PoseStamped>& path,
+                                              std::vector<double>& timediffs);
 
   //@}
 

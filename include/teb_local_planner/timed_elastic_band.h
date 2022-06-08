@@ -116,13 +116,13 @@ public:
   
   /**
    * @brief Access the complete timediff sequence 
-   * @return reference to the dimediff sequence
+   * @return reference to the timediff sequence
    */
   TimeDiffSequence& timediffs() {return timediff_vec_;};
   
   /**
    * @brief Access the complete timediff sequence 
-   * @return reference to the dimediff sequence
+   * @return reference to the timediff sequence
    */
   const TimeDiffSequence& timediffs() const {return timediff_vec_;};  
   

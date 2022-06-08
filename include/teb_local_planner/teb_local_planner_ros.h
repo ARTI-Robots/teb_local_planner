@@ -40,6 +40,7 @@
 #define TEB_LOCAL_PLANNER_ROS_H_
 
 #include <ros/ros.h>
+#include <ros/publisher.h>
 
 // base local planner base class and utilities
 #include <nav_core/base_local_planner.h>
@@ -59,9 +60,11 @@
 #include <nav_msgs/Path.h>
 #include <nav_msgs/Odometry.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Twist.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <visualization_msgs/Marker.h>
 #include <costmap_converter/ObstacleMsg.h>
+
 
 // transforms
 #include <tf2/utils.h>
@@ -156,6 +159,11 @@ public:
   uint32_t computeVelocityCommands(const geometry_msgs::PoseStamped& pose, const geometry_msgs::TwistStamped& velocity,
                                    geometry_msgs::TwistStamped &cmd_vel, std::string &message);
 
+  uint32_t computeVelocityCommands(const geometry_msgs::PoseStamped& pose, const geometry_msgs::TwistStamped& velocity,
+                                   geometry_msgs::TwistStamped &cmd_vel, std::string &message,
+                                   std::vector<geometry_msgs::PoseStamped>& path,
+                                   std::vector<geometry_msgs::Twist>& velocities);
+
   /**
     * @brief  Check if the goal pose has been achieved
     * 
@@ -193,7 +201,6 @@ public:
   /**
    * @brief Get the current robot footprint/contour model
    * @param nh const reference to the local ros::NodeHandle
-   * @param config const reference to the current configuration
    * @return Robot footprint model used for optimization
    */
   static RobotFootprintModelPtr getRobotFootprintFromParamServer(const ros::NodeHandle& nh, const TebConfig& config);
@@ -220,7 +227,18 @@ public:
    * @returns double value
    */
   static double getNumberFromXMLRPC(XmlRpc::XmlRpcValue& value, const std::string& full_param_name);
-  
+
+  std::vector<geometry_msgs::PoseStamped> getCurrentPath();
+  std::vector<geometry_msgs::Twist> getVelocities();
+  void extractVelocity(const geometry_msgs::PoseStamped pose1, const geometry_msgs::PoseStamped pose2, double dt,
+                       double& vx, double& vy, double& omega) const;
+  void extractVelocity(const PoseSE2& pose1, const PoseSE2& pose2, double dt, double& vx, double& vy, double& omega)
+  const;
+
+  void clearPlanner()
+  {
+    planner_->clearPlanner();
+  }
   //@}
   
 protected:
@@ -352,7 +370,6 @@ protected:
    * @param[in,out] omega The angular velocity that should be saturated.
    * @param max_vel_x Maximum translational velocity for forward driving
    * @param max_vel_y Maximum strafing velocity (for holonomic robots)
-   * @param max_vel_trans Maximum translational velocity for holonomic robots
    * @param max_vel_theta Maximum (absolute) angular velocity
    * @param max_vel_x_backwards Maximum translational velocity for backwards driving
    */
@@ -442,12 +459,15 @@ private:
   std::string global_frame_; //!< The frame in which the controller will run
   std::string robot_base_frame_; //!< Used as the base frame id of the robot
   std::string name_; //!< For use with the ros nodehandle
+
+  ros::Publisher timediff_pub_;
     
   // flags
   bool initialized_; //!< Keeps track about the correct initialization of this class
 
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
 };
   
 }; // end namespace teb_local_planner

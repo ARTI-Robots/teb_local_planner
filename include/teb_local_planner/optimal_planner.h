@@ -325,8 +325,11 @@ public:
    * @see setVisualization
    */
   virtual void visualize();
-  
-  //@}
+
+
+  void getPathAndTimediffs(std::vector<geometry_msgs::PoseStamped>& path,
+                                              std::vector<double>& timediffs);
+
   
   
   /** @name Utility methods and more */

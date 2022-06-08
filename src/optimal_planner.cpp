@@ -130,6 +130,11 @@ void TebOptimalPlanner::visualize()
  
 }
 
+void TebOptimalPlanner::getPathAndTimediffs(std::vector<geometry_msgs::PoseStamped>& path,
+                                            std::vector<double>& timediffs)
+{
+  visualization_->getLocalPlanAndPosesWithVelocitie(teb_, path, timediffs);
+}
 
 /*
  * registers custom vertices and edges in g2o framework
@@ -268,7 +273,8 @@ bool TebOptimalPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& init
       teb_.updateAndPruneTEB(start_, goal_, cfg_->trajectory.min_samples); // update TEB
     else // goal too far away -> reinit
     {
-      ROS_DEBUG("New goal: distance to existing goal is higher than the specified threshold. Reinitalizing trajectories.");
+      ROS_INFO("New goal: distance to existing goal is higher than the specified threshold. Reinitalizing trajectories"
+              ".");
       teb_.clearTimedElasticBand();
       teb_.initTrajectoryToGoal(initial_plan, cfg_->robot.max_vel_x, cfg_->robot.max_vel_theta, cfg_->trajectory.global_plan_overwrite_orientation,
         cfg_->trajectory.min_samples, cfg_->trajectory.allow_init_with_backwards_motion);
@@ -1148,7 +1154,7 @@ bool TebOptimalPlanner::getVelocityCommand(double& vx, double& vy, double& omega
     omega = 0;
     return false;
   }
-  look_ahead_poses = std::max(1, std::min(look_ahead_poses, teb_.sizePoses() - 1 - cfg_->trajectory.prevent_look_ahead_poses_near_goal));
+  look_ahead_poses = std::max(1, std::min(look_ahead_poses, teb_.sizePoses() - 1));
   double dt = 0.0;
   for(int counter = 0; counter < look_ahead_poses; ++counter)
   {

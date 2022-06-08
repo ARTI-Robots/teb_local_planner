@@ -127,6 +127,10 @@ public:
    * @param teb const reference to a Timed_Elastic_Band
    */
   void publishLocalPlanAndPoses(const TimedElasticBand& teb) const;
+
+  void getLocalPlanAndPosesWithVelocitie(const TimedElasticBand& teb,
+                                         std::vector<geometry_msgs::PoseStamped>& path,
+                                         std::vector<double>& timediffs) const;
   
   /**
    * @brief Publish the visualization of the robot model

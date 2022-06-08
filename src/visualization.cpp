@@ -117,6 +117,34 @@ void TebVisualization::publishLocalPlanAndPoses(const TimedElasticBand& teb) con
     teb_poses_pub_.publish(teb_poses);
 }
 
+void TebVisualization::getLocalPlanAndPosesWithVelocitie(const TimedElasticBand& teb,
+                                                         std::vector<geometry_msgs::PoseStamped>& path,
+                                                           std::vector<double>& timediffs) const
+{
+  if ( printErrorWhenNotInitialized() )
+    return;
+
+
+  path.clear();
+  path.reserve(teb.sizePoses());
+  // fill path msgs with teb configurations
+  for (int i=0; i < teb.sizePoses(); i++)
+  {
+    geometry_msgs::PoseStamped pose;
+    pose.header.frame_id = cfg_->map_frame;
+    pose.header.stamp =  ros::Time::now();
+    pose.pose.position.x = teb.Pose(i).x();
+    pose.pose.position.y = teb.Pose(i).y();
+    pose.pose.position.z = cfg_->hcp.visualize_with_time_as_z_axis_scale*teb.getSumOfTimeDiffsUpToIdx(i);
+    pose.pose.orientation = tf::createQuaternionMsgFromYaw(teb.Pose(i).theta());
+    path.push_back(pose);
+    if(i < teb.timediffs().size())
+    {
+      timediffs.push_back(teb.TimeDiff(i));
+    }
+  }
+
+}
 
 
 void TebVisualization::publishRobotFootprintModel(const PoseSE2& current_pose, const BaseRobotFootprintModel& robot_model, const std::string& ns,

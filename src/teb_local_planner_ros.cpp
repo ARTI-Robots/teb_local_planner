@@ -225,7 +225,10 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   std::string dummy_message;
   geometry_msgs::PoseStamped dummy_pose;
   geometry_msgs::TwistStamped dummy_velocity, cmd_vel_stamped;
-  uint32_t outcome = computeVelocityCommands(dummy_pose, dummy_velocity, cmd_vel_stamped, dummy_message);
+  std::vector<geometry_msgs::PoseStamped> path;
+  std::vector<geometry_msgs::Twist> velocities;
+  uint32_t outcome = computeVelocityCommands(dummy_pose, dummy_velocity, cmd_vel_stamped, dummy_message, path,
+                                             velocities);
   cmd_vel = cmd_vel_stamped.twist;
   return outcome == mbf_msgs::ExePathResult::SUCCESS;
 }
@@ -234,6 +237,19 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
                                                      const geometry_msgs::TwistStamped& velocity,
                                                      geometry_msgs::TwistStamped &cmd_vel,
                                                      std::string &message)
+{
+  std::vector<geometry_msgs::PoseStamped> path;
+  std::vector<geometry_msgs::Twist> velocities;
+  uint32_t outcome = computeVelocityCommands(pose, velocity, cmd_vel, message, path, velocities);
+  return outcome;
+}
+
+uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseStamped& pose,
+                                                     const geometry_msgs::TwistStamped& velocity,
+                                                     geometry_msgs::TwistStamped &cmd_vel,
+                                                     std::string &message,
+                                                     std::vector<geometry_msgs::PoseStamped>& path,
+                                                     std::vector<geometry_msgs::Twist>& velocities)
 {
   // check if plugin initialized
   if(!initialized_)
@@ -407,6 +423,36 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   }
 
   // Get the velocity command for this sampling interval
+
+  std::vector<double> timediffs;
+  planner_->getPathAndTimediffs(path, timediffs);
+
+  ROS_INFO_STREAM_NAMED("TEB_LOCAL_PLANNER_ROS", "path size: " << path.size() << "  timediffs: " << timediffs.size());
+  if(path.size() > 0 && timediffs.size()>0 )
+  {
+    for (int i = 0; i < path.size(); i++)
+    {
+      geometry_msgs::PoseStamped p = path.at(i);
+      ROS_DEBUG_STREAM("index: "<< i << " position: " << path.at(i).pose.position);
+      p.header.frame_id = cfg_.map_frame;
+      p.header.stamp = ros::Time::now();
+
+      if ((i + 1) < path.size())
+      {
+        auto p1 = path.at(i);
+        auto p2 = path.at(i + 1);
+        double dt = timediffs.at(i);
+        double vx, vy, omega = 0.0;
+        extractVelocity(p1, p2, dt, vx, vy, omega);
+        geometry_msgs::Twist t;
+        t.linear.x = vx;
+        t.linear.y = vy;
+        t.angular.z = omega;
+        velocities.push_back(t);
+      }
+    }
+  }
+
   if (!planner_->getVelocityCommand(cmd_vel.twist.linear.x, cmd_vel.twist.linear.y, cmd_vel.twist.angular.z, cfg_.trajectory.control_look_ahead_poses))
 
   {
@@ -421,8 +467,7 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   
   // Saturate velocity, if the optimization results violates the constraints (could be possible due to soft constraints).
   saturateVelocity(cmd_vel.twist.linear.x, cmd_vel.twist.linear.y, cmd_vel.twist.angular.z,
-                   cfg_.robot.max_vel_x, cfg_.robot.max_vel_y, cfg_.robot.max_vel_trans, cfg_.robot.max_vel_theta, 
-                   cfg_.robot.max_vel_x_backwards);
+                   cfg_.robot.max_vel_x, cfg_.robot.max_vel_y, cfg_.robot.max_vel_trans, cfg_.robot.max_vel_theta, cfg_.robot.max_vel_x_backwards);
 
   // convert rot-vel to steering angle if desired (carlike robot).
   // The min_turning_radius is allowed to be slighly smaller since it is a soft-constraint
@@ -443,6 +488,8 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
       return mbf_msgs::ExePathResult::NO_VALID_CMD;
     }
   }
+  //ROS_INFO_STREAM_NAMED("TEB_local_planner_ros" , "should have path by now path_poses size: " << planner_->teb().poses()
+  //  .size());
   
   // a feasible solution should be found, reset counter
   no_infeasible_plans_ = 0;
@@ -457,6 +504,136 @@ uint32_t TebLocalPlannerROS::computeVelocityCommands(const geometry_msgs::PoseSt
   visualization_->publishGlobalPlan(global_plan_);
   return mbf_msgs::ExePathResult::SUCCESS;
 }
+std::vector<geometry_msgs::PoseStamped> TebLocalPlannerROS::getCurrentPath()
+{
+  // create path msg
+
+  //nav_msgs::Path teb_path;
+  //teb_path.header.frame_id = cfg_.map_frame;
+  //teb_path.header.stamp = ros::Time::now();
+
+  // fill path msgs with teb configurations
+
+  std::vector<geometry_msgs::PoseStamped> path;
+  if(!planner_)
+  {
+    ROS_ERROR("planner not set");
+    return path;
+  }
+
+  const auto &teb = planner_.get()->teb();
+  if(!teb.isInit())
+  {
+    ROS_ERROR("planner not initialized");
+    return path;
+  }
+  if(teb.poses().size() != (teb.timediffs().size()+1))
+  {
+    ROS_WARN_STREAM_NAMED("TebLocalPlanner", "poses ("<<teb.poses().size()<<") and timediff ("<< teb.timediffs().size
+      ()+1 <<") size missmatch" );
+    return path;
+  }
+
+  for (int i = 0; i < teb.poses().size(); i++)
+  {
+    //ROS_WARN_STREAM("index: "<< i);
+    geometry_msgs::PoseStamped pose;
+    pose.header.frame_id = cfg_.map_frame;
+    pose.header.stamp = ros::Time::now();
+    pose.pose.position.x = teb.poses().at(i)->x();//teb.Pose(i).x();
+    pose.pose.position.y = teb.poses().at(i)->y();//teb.Pose(i).y();
+    pose.pose.position.z = cfg_.hcp.visualize_with_time_as_z_axis_scale * teb.getSumOfTimeDiffsUpToIdx(i);
+    pose.pose.orientation = tf::createQuaternionMsgFromYaw(teb.poses().at(i)->theta());//teb.Pose(i).theta());
+    path.push_back(pose);
+  }
+
+  ROS_WARN_STREAM("end getCurrentPath, poses: " << path.size());
+  return path;
+  //return boost::make_shared<nav_msgs::Path>(teb_path);
+}
+
+std::vector<geometry_msgs::Twist> TebLocalPlannerROS::getVelocities()
+{
+  const auto &teb = planner_.get()->teb();
+  if(teb.poses().size() != (teb.timediffs().size()+1))
+  {
+    ROS_WARN_STREAM_NAMED("TebLocalPlanner", "poses ("<<teb.poses().size()<<") and timediff ("<< teb.timediffs().size
+    ()+1 <<") size missmatch" );
+    return std::vector<geometry_msgs::Twist>();
+  }
+
+  std::vector<geometry_msgs::Twist> velos;
+  for(int i = 0; i < teb.poses().size()-1; i++)
+  {
+    auto p1 = teb.poses().at(i)->pose();
+    auto p2 = teb.poses().at(i+1)->pose();
+    double dt = teb.timediffs().at(i)->dt();
+    double vx,vy, omega = 0.0;
+    extractVelocity(p1, p2, dt, vx, vy, omega);
+    geometry_msgs::Twist t;
+    t.linear.x = vx;
+    t.linear.y = vy;
+    t.angular.z = omega;
+    velos.push_back(t);
+  }
+
+  return velos;
+
+}
+
+void TebLocalPlannerROS::extractVelocity(const geometry_msgs::PoseStamped pose1, const geometry_msgs::PoseStamped
+                                          pose2, double dt, double& vx, double& vy,
+                                         double& omega) const
+{
+  PoseSE2 p1, p2;
+  p1.x() = pose1.pose.position.x;
+  p1.y() = pose1.pose.position.y;
+  p1.theta() = tf::getYaw(pose1.pose.orientation);
+  p2.x() = pose2.pose.position.x;
+  p2.y() = pose2.pose.position.y;
+  p2.theta() = tf::getYaw(pose2.pose.orientation);
+
+  extractVelocity(p1, p2, dt, vx, vy, omega);
+}
+
+void TebLocalPlannerROS::extractVelocity(const PoseSE2& pose1, const PoseSE2& pose2, double dt, double& vx, double& vy, double& omega) const
+{
+  if (dt == 0)
+  {
+    vx = 0;
+    vy = 0;
+    omega = 0;
+    return;
+  }
+
+  Eigen::Vector2d deltaS = pose2.position() - pose1.position();
+
+  if (cfg_.robot.max_vel_y == 0) // nonholonomic robot
+  {
+    Eigen::Vector2d conf1dir( cos(pose1.theta()), sin(pose1.theta()) );
+    // translational velocity
+    double dir = deltaS.dot(conf1dir);
+    vx = (double) g2o::sign(dir) * deltaS.norm()/dt;
+    vy = 0;
+  }
+  else // holonomic robot
+  {
+    // transform pose 2 into the current robot frame (pose1)
+    // for velocities only the rotation of the direction vector is necessary.
+    // (map->pose1-frame: inverse 2d rotation matrix)
+    double cos_theta1 = std::cos(pose1.theta());
+    double sin_theta1 = std::sin(pose1.theta());
+    double p1_dx =  cos_theta1*deltaS.x() + sin_theta1*deltaS.y();
+    double p1_dy = -sin_theta1*deltaS.x() + cos_theta1*deltaS.y();
+    vx = p1_dx / dt;
+    vy = p1_dy / dt;
+  }
+
+  // rotational velocity
+  double orientdiff = g2o::normalize_theta(pose2.theta() - pose1.theta());
+  omega = orientdiff/dt;
+}
+
 
 
 bool TebLocalPlannerROS::isGoalReached()
@@ -469,7 +646,6 @@ bool TebLocalPlannerROS::isGoalReached()
   }
   return false;
 }
-
 
 
 void TebLocalPlannerROS::updateObstacleContainerWithCostmap()
@@ -740,6 +916,8 @@ bool TebLocalPlannerROS::transformGlobalPlan(const tf2_ros::Buffer& tf, const st
       double x_diff = robot_pose.pose.position.x - global_plan[j].pose.position.x;
       double y_diff = robot_pose.pose.position.y - global_plan[j].pose.position.y;
       double new_sq_dist = x_diff * x_diff + y_diff * y_diff;
+      if (new_sq_dist > sq_dist_threshold)
+        break;  // force stop if we have reached the costmap border
 
       if (robot_reached && new_sq_dist > sq_dist)
         break;
@@ -868,8 +1046,8 @@ double TebLocalPlannerROS::estimateLocalGoalOrientation(const std::vector<geomet
 }
       
       
-void TebLocalPlannerROS::saturateVelocity(double& vx, double& vy, double& omega, double max_vel_x, double max_vel_y, double max_vel_trans, double max_vel_theta, 
-              double max_vel_x_backwards) const
+void TebLocalPlannerROS::saturateVelocity(double& vx, double& vy, double& omega, double max_vel_x, double max_vel_y, double max_vel_trans,
+                                          double max_vel_theta, double max_vel_x_backwards) const
 {
   double ratio_x = 1, ratio_omega = 1, ratio_y = 1;
   // Limit translational velocity for forward driving
@@ -878,7 +1056,7 @@ void TebLocalPlannerROS::saturateVelocity(double& vx, double& vy, double& omega,
   
   // limit strafing velocity
   if (vy > max_vel_y || vy < -max_vel_y)
-    ratio_y = std::abs(max_vel_y / vy);
+    ratio_y = std::abs(vy / max_vel_y);
   
   // Limit angular velocity
   if (omega > max_vel_theta || omega < -max_vel_theta)
@@ -904,14 +1082,6 @@ void TebLocalPlannerROS::saturateVelocity(double& vx, double& vy, double& omega,
     vx *= ratio_x;
     vy *= ratio_y;
     omega *= ratio_omega;
-  }
-
-  double vel_linear = std::hypot(vx, vy);
-  if (vel_linear > max_vel_trans)
-  {
-    double max_vel_trans_ratio = max_vel_trans / vel_linear;
-    vx *= max_vel_trans_ratio;
-    vy *= max_vel_trans_ratio;
   }
 }
      

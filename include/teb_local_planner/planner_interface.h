@@ -46,14 +46,18 @@
 #include <tf/transform_datatypes.h>
 #include <base_local_planner/costmap_model.h>
 
+#include <geometry_msgs/PoseStamped.h>
+
 // this package
 #include <teb_local_planner/pose_se2.h>
 #include <teb_local_planner/robot_footprint_model.h>
+#include <teb_local_planner/timed_elastic_band.h>
 
 // messages
 #include <geometry_msgs/PoseArray.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
+
 
 
 namespace teb_local_planner
@@ -160,6 +164,12 @@ public:
   virtual void visualize()
   {
   }
+
+  virtual void getPathAndTimediffs(std::vector<geometry_msgs::PoseStamped>& path,
+                                              std::vector<double>& timediffs)
+  {
+
+  }
   
   virtual void updateRobotModel(RobotFootprintModelPtr robot_model)
   {
@@ -193,6 +203,26 @@ public:
   }
 
   /**
+ * Return the Time Elastic Band
+ * @param[out] cost current cost value for each trajectory
+ *                  [for a planner with just a single trajectory: size=1, vector will not be cleared]
+ * @param obst_cost_scale Specify extra scaling for obstacle costs
+ * @param alternative_time_cost Replace the cost for the time optimal objective by the actual (weighted) transition time
+ */
+  //virtual TebOptimalPlannerPtr getTeb()
+  //{
+  //}
+
+  /**
+   * @brief Access the internal TimedElasticBand trajectory (read-only).
+   * @return const reference to the teb
+   */
+  virtual const TimedElasticBand& teb()
+  {
+
+  }
+
+  /**
    * @brief Returns true if the planner has diverged.
    */
   virtual bool hasDiverged() const = 0;
@@ -201,7 +231,6 @@ public:
 
 //! Abbrev. for shared instances of PlannerInterface or it's subclasses 
 typedef boost::shared_ptr<PlannerInterface> PlannerInterfacePtr;
-
 
 } // namespace teb_local_planner
 
